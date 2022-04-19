@@ -76,7 +76,6 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) *http
 	} else {
 		logger.PduSessLog.Infoln("Send NF Discovery Serving UDM Successfully")
 	}
-
 	// IP Allocation
 	upfSelectionParams := &smf_context.UPFSelectionParams{
 		Dnn: createData.Dnn,
@@ -88,34 +87,58 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) *http
 	var selectedUPF *smf_context.UPNode
 	var ip net.IP
 	selectedUPFName := ""
-	if smf_context.SMF_Self().ULCLSupport && smf_context.CheckUEHasPreConfig(createData.Supi) {
-		groupName := smf_context.GetULCLGroupNameFromSUPI(createData.Supi)
-		defaultPathPool := smf_context.GetUEDefaultPathPool(groupName)
-		if defaultPathPool != nil {
-			selectedUPFName, ip = defaultPathPool.SelectUPFAndAllocUEIPForULCL(
-				smf_context.GetUserPlaneInformation(), upfSelectionParams)
-			selectedUPF = smf_context.GetUserPlaneInformation().UPFs[selectedUPFName]
+	// Check PDU Session Type
+	// 1 is for IPv4 and 5 is for Ethernet
+	PDUSessionType := m.GsmMessage.PDUSessionEstablishmentRequest.PDUSessionType.GetPDUSessionTypeValue()
+	logger.PduSessLog.Info("Request PDU Session Type: ", PDUSessionType)
+	if PDUSessionType == 1 {
+		// IPV4 type PDU Session
+		if smf_context.SMF_Self().ULCLSupport && smf_context.CheckUEHasPreConfig(createData.Supi) {
+			groupName := smf_context.GetULCLGroupNameFromSUPI(createData.Supi)
+			defaultPathPool := smf_context.GetUEDefaultPathPool(groupName)
+			if defaultPathPool != nil {
+				selectedUPFName, ip = defaultPathPool.SelectUPFAndAllocUEIPForULCL(
+					smf_context.GetUserPlaneInformation(), upfSelectionParams)
+				selectedUPF = smf_context.GetUserPlaneInformation().UPFs[selectedUPFName]
+			}
+		} else {
+			selectedUPF, ip = smf_context.GetUserPlaneInformation().SelectUPFAndAllocUEIP(upfSelectionParams)
+			smContext.PDUAddress = ip
+			logger.PduSessLog.Infof("UE[%s] PDUSessionID[%d] IP[%s]",
+				smContext.Supi, smContext.PDUSessionID, smContext.PDUAddress.String())
 		}
-	} else {
-		selectedUPF, ip = smf_context.GetUserPlaneInformation().SelectUPFAndAllocUEIP(upfSelectionParams)
+		if ip == nil && (selectedUPF == nil || selectedUPFName == "") {
+			logger.PduSessLog.Error("failed allocate IP address for this SM")
+
+			smContext.SMContextState = smf_context.InActive
+			logger.CtxLog.Traceln("SMContextState Change State: ", smContext.SMContextState.String())
+			logger.PduSessLog.Warnf("Data Path not found\n")
+			logger.PduSessLog.Warnln("Selection Parameter: ", upfSelectionParams.String())
+
+			return makeErrorResponse(smContext, nasMessage.Cause5GSMInsufficientResourcesForSpecificSliceAndDNN,
+				&Nsmf_PDUSession.InsufficientResourceSliceDnn)
+		}
 		smContext.PDUAddress = ip
-		logger.PduSessLog.Infof("UE[%s] PDUSessionID[%d] IP[%s]",
-			smContext.Supi, smContext.PDUSessionID, smContext.PDUAddress.String())
+		smContext.SelectedUPF = selectedUPF
+
+	} else if PDUSessionType == 5 {
+		// Ethernet type PDU Session
+		selectedUPF = smf_context.GetUserPlaneInformation().SelectUPF(upfSelectionParams)
+		if selectedUPF == nil && selectedUPFName == "" {
+			logger.PduSessLog.Error("failed select UPF for this SM")
+
+			smContext.SMContextState = smf_context.InActive
+			logger.CtxLog.Traceln("SMContextState Change State: ", smContext.SMContextState.String())
+			logger.PduSessLog.Warnf("Data Path not found\n")
+			logger.PduSessLog.Warnln("Selection Parameter: ", upfSelectionParams.String())
+
+			return makeErrorResponse(smContext, nasMessage.Cause5GSMInsufficientResourcesForSpecificSliceAndDNN,
+				&Nsmf_PDUSession.InsufficientResourceSliceDnn)
+		}
+		smContext.SelectedUPF = selectedUPF
+	} else {
+		logger.PduSessLog.Errorln("This PDU Session is not supported.")
 	}
-	if ip == nil && (selectedUPF == nil || selectedUPFName == "") {
-		logger.PduSessLog.Error("failed allocate IP address for this SM")
-
-		smContext.SMContextState = smf_context.InActive
-		logger.CtxLog.Traceln("SMContextState Change State: ", smContext.SMContextState.String())
-		logger.PduSessLog.Warnf("Data Path not found\n")
-		logger.PduSessLog.Warnln("Selection Parameter: ", upfSelectionParams.String())
-
-		return makeErrorResponse(smContext, nasMessage.Cause5GSMInsufficientResourcesForSpecificSliceAndDNN,
-			&Nsmf_PDUSession.InsufficientResourceSliceDnn)
-	}
-	smContext.PDUAddress = ip
-	smContext.SelectedUPF = selectedUPF
-
 	smPlmnID := createData.Guami.PlmnId
 
 	smDataParams := &Nudm_SubscriberDataManagement.GetSmDataParamOpts{
@@ -200,10 +223,10 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) *http
 		if defaultPath != nil {
 			defaultPath.IsDefaultPath = true
 			smContext.Tunnel.AddDataPath(defaultPath)
+			//logger.CtxLog.Infoln("datapath: ", defaultPath.String())
 			defaultPath.ActivateTunnelAndPDR(smContext, 255)
 		}
 	}
-
 	if defaultPath == nil {
 		smContext.SMContextState = smf_context.InActive
 		logger.CtxLog.Traceln("SMContextState Change State: ", smContext.SMContextState.String())
@@ -213,7 +236,6 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) *http
 		return makeErrorResponse(smContext, nasMessage.Cause5GSMInsufficientResourcesForSpecificSliceAndDNN,
 			&Nsmf_PDUSession.InsufficientResourceSliceDnn)
 	}
-
 	if problemDetails, err := consumer.SendNFDiscoveryServingAMF(smContext); err != nil {
 		logger.PduSessLog.Warnf("Send NF Discovery Serving AMF Error[%v]", err)
 	} else if problemDetails != nil {
@@ -230,7 +252,6 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) *http
 		}
 	}
 	SendPFCPRules(smContext)
-
 	response.JsonData = smContext.BuildCreatedData()
 	httpResponse := &httpwrapper.Response{
 		Header: http.Header{

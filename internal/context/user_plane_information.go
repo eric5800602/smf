@@ -267,7 +267,7 @@ func (upi *UserPlaneInformation) GetDefaultUserPlanePathByDNN(selection *UPFSele
 func (upi *UserPlaneInformation) GetDefaultUserPlanePathByDNNAndUPF(selection *UPFSelectionParams,
 	upf *UPNode) (path UPPath) {
 	nodeID := upf.NodeID.ResolveNodeIdToIp().String()
-
+	logger.CfgLog.Infoln("selection: ", selection.String())
 	if upi.DefaultUserPlanePathToUPF[selection.String()] != nil {
 		path, pathExist := upi.DefaultUserPlanePathToUPF[selection.String()][nodeID]
 		logger.CtxLog.Traceln("In GetDefaultUserPlanePathByDNN")
@@ -531,6 +531,33 @@ func (upi *UserPlaneInformation) selectUPPathSource() (*UPNode, error) {
 		}
 	}
 	return nil, errors.New("AN Node not found")
+}
+
+func (upi *UserPlaneInformation) SelectUPF(selection *UPFSelectionParams) *UPNode {
+	source, err := upi.selectUPPathSource()
+	if err != nil {
+		return nil
+	}
+	UPFList := upi.selectAnchorUPF(source, selection)
+	listLength := len(UPFList)
+	if listLength == 0 {
+		logger.CtxLog.Warnf("Can't find UPF with DNN[%s] S-NSSAI[sst: %d sd: %s] DNAI[%s]\n", selection.Dnn,
+			selection.SNssai.Sst, selection.SNssai.Sd, selection.Dnai)
+		return nil
+	}
+	UPFList = upi.sortUPFListByName(UPFList)
+	sortedUPFList := createUPFListForSelection(UPFList)
+	for _, upf := range sortedUPFList {
+		logger.CtxLog.Debugf("check start UPF: %s",
+			upi.GetUPFNameByIp(upf.NodeID.ResolveNodeIdToIp().String()))
+		logger.CtxLog.Infof("Selected UPF: %s",
+			upi.GetUPFNameByIp(upf.NodeID.ResolveNodeIdToIp().String()))
+		return upf
+	}
+	// checked all UPFs
+	logger.CtxLog.Warnf("UE IP pool exhausted for DNN[%s] S-NSSAI[sst: %d sd: %s] DNAI[%s]\n", selection.Dnn,
+		selection.SNssai.Sst, selection.SNssai.Sd, selection.Dnai)
+	return nil
 }
 
 func (upi *UserPlaneInformation) SelectUPFAndAllocUEIP(selection *UPFSelectionParams) (*UPNode, net.IP) {
