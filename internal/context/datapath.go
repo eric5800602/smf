@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/free5gc/nas/nasMessage"
 	"github.com/free5gc/openapi/models"
 	"github.com/free5gc/pfcp/pfcpType"
 	"github.com/free5gc/smf/internal/logger"
@@ -393,18 +394,36 @@ func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence 
 				logger.CtxLog.Errorln("ActivateTunnelAndPDR failed", err)
 				return
 			} else {
-				ULPDR.PDI = PDI{
-					SourceInterface: pfcpType.SourceInterface{InterfaceValue: pfcpType.SourceInterfaceAccess},
-					LocalFTeid: &pfcpType.FTEID{
-						V4:          true,
-						Ipv4Address: upIP,
-						Teid:        curULTunnel.TEID,
-					},
-					NetworkInstance: &pfcpType.NetworkInstance{NetworkInstance: smContext.Dnn},
-					UEIPAddress: &pfcpType.UEIPAddress{
-						V4:          true,
-						Ipv4Address: smContext.PDUAddress.To4(),
-					},
+				if smContext.SelectedPDUSessionType == nasMessage.PDUSessionTypeEthernet {
+					/* Create Ethernet Packet Filiter*/
+					var ULEPF *EthernetPacketFilter
+					ULPDR.PDI = PDI{
+						SourceInterface: pfcpType.SourceInterface{InterfaceValue: pfcpType.SourceInterfaceAccess},
+						LocalFTeid: &pfcpType.FTEID{
+							V4:          true,
+							Ipv4Address: upIP,
+							Teid:        curULTunnel.TEID,
+						},
+						NetworkInstance: &pfcpType.NetworkInstance{NetworkInstance: smContext.Dnn},
+						UEIPAddress: &pfcpType.UEIPAddress{
+							V4:          true,
+							Ipv4Address: smContext.PDUAddress.To4(),
+						},
+					}
+				} else {
+					ULPDR.PDI = PDI{
+						SourceInterface: pfcpType.SourceInterface{InterfaceValue: pfcpType.SourceInterfaceAccess},
+						LocalFTeid: &pfcpType.FTEID{
+							V4:          true,
+							Ipv4Address: upIP,
+							Teid:        curULTunnel.TEID,
+						},
+						NetworkInstance: &pfcpType.NetworkInstance{NetworkInstance: smContext.Dnn},
+						UEIPAddress: &pfcpType.UEIPAddress{
+							V4:          true,
+							Ipv4Address: smContext.PDUAddress.To4(),
+						},
+					}
 				}
 			}
 

@@ -30,12 +30,25 @@ type PDR struct {
 
 // Packet Detection. 7.5.2.2-2
 type PDI struct {
-	SourceInterface pfcpType.SourceInterface
-	LocalFTeid      *pfcpType.FTEID
-	NetworkInstance *pfcpType.NetworkInstance
-	UEIPAddress     *pfcpType.UEIPAddress
-	SDFFilter       *pfcpType.SDFFilter
-	ApplicationID   string
+	SourceInterface               pfcpType.SourceInterface
+	LocalFTeid                    *pfcpType.FTEID
+	NetworkInstance               *pfcpType.NetworkInstance
+	UEIPAddress                   *pfcpType.UEIPAddress
+	SDFFilter                     *pfcpType.SDFFilter
+	EthernetPDUSessionInformation *pfcpType.EthernetPDUSessionInformation
+	EthernetPacketFiliter         *EthernetPacketFilter
+	ApplicationID                 string
+}
+
+// Ethernet Packet Filter 7.5.2.2-3
+type EthernetPacketFilter struct {
+	EthernetFilterID         *pfcpType.EthernetFilterID         `tlv:"138"`
+	EthernetFilterProperties *pfcpType.EthernetFilterProperties `tlv:"139"`
+	MACAddress               *pfcpType.MACAddress               `tlv:"133"`
+	Ethertype                *pfcpType.Ethertype                `tlv:"136"`
+	CTAG                     *pfcpType.CTAG                     `tlv:"134"`
+	STAG                     *pfcpType.STAG                     `tlv:"135"`
+	SDFFilter                *pfcpType.SDFFilter                `tlv:"23"`
 }
 
 // Forwarding Action Rule. 7.5.2.3-1
